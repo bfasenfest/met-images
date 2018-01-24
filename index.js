@@ -1,15 +1,19 @@
 var fs = require('fs');
 var request = require('request');
 var cheerio = require('cheerio');
+var now = require("performance-now")
+
 var json = require('./jsons/metObject-50k.json');
 
 var itemsBeingProcessed = 0;
-var maxItems = 30
 var fileQueue = [];
+var maxItems = 30
 var counter = 0
 
 var outputName = "metObjects-linked200.json"
-var max = 200
+var max = 2000
+
+var t0 = now(), t1 = 0
 
 json.forEach( (artwork, index, array) => {
   processUrl(artwork)
@@ -34,7 +38,9 @@ function processUrl(artwork) {
       artwork.imgSrc = parsed
       counter++
       process.stdout.write(` \r processed ${counter} of ${json.length} `);
-      if (counter == max) outputFile()
+      if (counter == max || counter == json.length) {
+        outputFile()
+      }
       finishUrl()
     }
     else {
@@ -49,4 +55,12 @@ function processUrl(artwork) {
         processUrl(fileQueue.shift());
       }
     }
+}
+
+function outputFile(){
+  console.log('...Outputing file...')
+  t1 = now()
+  let secs = ((t1-t0)/1000).toFixed(1)
+  console.log("Output took " + secs + " seconds ( " + secs/60 + " minutes)")
+  fs.writeFileSync(outputName, JSON.stringify(json));
 }

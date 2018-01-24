@@ -9,6 +9,7 @@
     "fs": "^0.0.1-security",
     "jquery": "^3.3.1",
     "json-2-csv": "^2.1.2",
+    "performance-now": "^2.1.0",
     "request": "^2.83.0",
     "scrape-it": "^4.1.2",
     "underscore": "^1.8.3"

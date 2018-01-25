@@ -1,7 +1,10 @@
 node_modules
 jsons/
 MetObjects.csv
-
+tiles/
+tiles2/
+tiles3/
+amulets/
 metObjects.json
 
 metObjects-linked200.json

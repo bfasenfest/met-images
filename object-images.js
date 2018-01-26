@@ -3,7 +3,7 @@ var request = require('request');
 var cheerio = require('cheerio');
 var now = require("performance-now")
 
-var json = require('./metObjects.json');
+var json = require('./metObjects-linked.json');
 
 var itemsBeingProcessed = 0;
 var fileQueue = [];
@@ -13,15 +13,17 @@ var counter = 0
 var max = json.length || 2000
 var t0 = now(), t1 = 0
 
-const outDir = './tiles2/'
+const outDir = './quilts/'
 const saveJson = false
 const saveImages = true
 
 objects = json.filter(artwork => {
-  let term = 'tile'
+  let term = 'quilt'
   regexp = new RegExp('\\b' + term , 'i') // /\btile/i  aka /\b (term) /i
 
   let result = false
+  // if (artwork["Artist Display Name"]) result = regexp.test(artwork["Artist Display Name"]) // artwork["Title"].includes(term)
+
   if (artwork["Title"]) result = regexp.test(artwork["Title"]) // artwork["Title"].includes(term)
   if (result) return result
   if (artwork["Object Name"]) result = regexp.test(artwork["Object Name"]) // artwork["Object Name"].includes("term")
@@ -96,14 +98,20 @@ function saveImage(artwork, folder){
   name = name.replace(/[`~!@#$%^&*()_|+\-=?;:'",.<>\{\}\[\]\\\/]/gi, '')
   if (name.length > 40) name = name.slice(0,40)
 
+  let stream = fs.createWriteStream(folder + name + "_" + id + '.png')
+
   if (link) {
     request(link).on('error', function(err) {
       console.log(err)
     })
-    .pipe(fs.createWriteStream(folder + name + "_" + id + '.png'));
+    .pipe(stream);
   }
-  counter++
-  finishImage(folder)
+  stream.on('finish', () => {
+    counter++
+    finishImage(folder)
+    if (counter == length) console.log("... complete")
+  })
+
 }
 
 function processImage(artwork, folder = './') {
@@ -135,7 +143,7 @@ function processImage(artwork, folder = './') {
 function finishImage(folder) {
   itemsBeingProcessed -= 1;
   process.stdout.write(`\rprocessed ${counter} of ${length} `);
-  if (itemsBeingProcessed <= maxItems && fileQueue.length > 1) {
+  if (itemsBeingProcessed <= maxItems && fileQueue.length > 0) {
     processImage(fileQueue.shift(), folder);
   }
 }

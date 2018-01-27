@@ -16,6 +16,7 @@
     "json-2-csv": "^2.1.2",
     "minimist": "^1.2.0",
     "performance-now": "^2.1.0",
+    "puppeteer": "^1.0.0",
     "request": "^2.83.0",
     "scrape-it": "^4.1.2",
     "underscore": "^1.8.3"

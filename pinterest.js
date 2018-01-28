@@ -1,23 +1,26 @@
-var fs = require('fs');
-var request = require('request');
-var cheerio = require('cheerio');
-var now = require("performance-now")
+var fs          = require("fs-extra");
+var request     = require('request');
+var cheerio     = require('cheerio');
+var now         = require("performance-now")
 var chalk       = require('chalk');
 var clear       = require('clear');
 var CLI         = require('clui');
+var ora         = require('ora');
 var figlet      = require('figlet');
 var inquirer    = require('inquirer');
 const puppeteer = require('puppeteer');
-var Spinner     = CLI.Spinner;
+
 
 var itemsBeingProcessed = 0;
 var fileQueue = [];
-var maxItems = 40
+var maxItems = 5
 var counter = 0
 var responses = {}
 const exportFile = true
 var length = 10
 
+var Progress = CLI.Progress, Spinner = CLI.Spinner;
+var status = {}
 
 var t0 = now(), t1 = 0
 
@@ -52,13 +55,15 @@ function getTopic(callback) {
 
 function getLocation(answers){
   responses.topics = answers.topics.split(',')
+  let manyTopics = responses.topics.length !== 1
+  let defaultLoc = !manyTopics ? './' + responses.topics[0].replace(/ /g,'') + '/' : './images/'
 
   var questions = [
     {
       name: 'location',
       type: 'input',
       message: 'Enter location to save',
-      default: './' + responses.topics[0] + '/',
+      default: defaultLoc, // './' + responses.topics[0] + '/',
       validate: function( value ) {
         if (value.length) {
           return true;
@@ -71,26 +76,30 @@ function getLocation(answers){
       message: "Create folders for each topic?",
       type: "confirm",
       name: "useFolders",
-      default: true
+      default: manyTopics
     },
     {
-      name: 'maxResponses',
+      message: "Display scraping with Chrome?",
+      type: "confirm",
+      name: "headless",
+      default: false
+    },
+    {
+      name: 'maxImages',
       type: 'input',
       message: 'How many images do you want to download?',
-      default: '10',
+      default: 10,
       validate: function( value ) {
-        if (value.length) {
-          return true;
-        } else {
-          return 'Please enter a number';
-        }
+        var isValid = !Number.isNaN(value);
+        return isValid || "This should be an integer number!";
       }
     },
   ];
 
   inquirer.prompt(questions).then(function(){
     responses = {...responses, ...arguments[0]} // responses.location = arguments[0].location
-    console.log(responses)
+    responses.length = responses.maxImages * responses.topics.length
+    // console.log(responses)
     initDownload()
   })
 }
@@ -100,34 +109,35 @@ function initDownload(){
   responses.topics.forEach( (name) => {
     let topic = {}
     topic.name = name.replace(/^\s+|\s+$/g,"")
-    topic.page = "https://www.pinterest.com/search/pins/?q=" + topic.name
+    topic.page = "https://www.pinterest.com/search/pins/?q=" + topic.name.replace(/ /g,'%20')
     topic.location = responses.location
-    if (responses.useFolders && responses.topics.length > 1) topic.location += '/' + topic.name + '/'
+    if (responses.useFolders && responses.topics.length > 1) topic.location += '/' + topic.name.replace(/ /g,'') + '/'
     if (topic.name !== '') topics.push(topic)
+    fs.ensureDirSync(topic.location);
     if (!fs.existsSync(topic.location)){
       fs.mkdirSync(topic.location);
     }
   })
-  console.log("Getting Topics!")
+  //var status = new Spinner('Getting Topics... ', ['⣾','⣽','⣻','⢿','⡿','⣟','⣯','⣷']);
+  status.topics = ora({text: 'Scraping Topic Info', spinner: 'dots2'}).start()
   topics.forEach( (topic) => {
     browse(topic);
 
   })
-
 }
 
 async function browse(topic) {
   height = 1000
   width = 1600
-  const browser = await puppeteer.launch({headless: true});
+  const browser = await puppeteer.launch({headless: !responses.headless});
   const page = await browser.newPage();
   await page.setViewport({width, height})
 
   const {targetInfos: [{targetId}]} = await browser._connection.send(
     'Target.getTargets'
   );
-  
-  // Tab window. 
+
+  // Tab window.
   const {windowId} = await browser._connection.send(
     'Browser.getWindowForTarget',
     {targetId}
@@ -144,45 +154,46 @@ async function browse(topic) {
   await page.waitFor(1000);
 
   let artworks = []
-  for (i = 1; i <= 10; i++){
+  for (i = 1; i <= responses.maxImages; i++){
     let sel = 'body > div.App.AppBase.Module > div.appContent > div.mainContainer > div > div > div > div > div:nth-child(2) > div > div > div > div:nth-child(' + i + ') > div > div.GrowthUnauthPinImage > a > img'
     let artwork = await page.evaluate((i, sel) => {
       let data = {}
       let item = document.querySelector(sel) //('div.GrowthUnauthPin_brioPin')
-      data.imgSrc = item.getAttribute('src').replace(/236x/, 'originals');
-      data.title = item.getAttribute('alt')
+      data.imgSrc = item ? item.getAttribute('src').replace(/236x/, 'originals') : ''
+      data.title = item ? item.getAttribute('alt') : ''
       return data
     }, i, sel)
     if (i % 20 == 0) {
       await page.hover(sel)
-      await page.waitFor(1000)
+      await page.waitFor(1500)
     }
-    console.log(artwork)
-    processImage(artwork, topic.location)
+    // console.log(artwork)
+    processImage(artwork, topic)
     artworks.push(artwork)
 }
+  // status.topics.succeed()
   browser.close();
-
   return artworks
 }
 
-function processImage(artwork, folder = './') {
-  console.log(folder)
+function processImage(artwork, topic) {
   if (itemsBeingProcessed > maxItems) {
     fileQueue.push(artwork);
     return;
   }
-  let page = artwork["Link Resource"]
+  //let page = artwork["Link Resource"]
 
   itemsBeingProcessed += 1;
-  saveImage(artwork, folder)
+  saveImage(artwork, topic)
 }
 
-function saveImage(artwork, folder){
+function saveImage(artwork, topic){
   let link = artwork.imgSrc
   let name = artwork.title
-  name = name.replace(/[`~!@#$%^&*()_|+\-=?;:'",.<>\{\}\[\]\\\/]/gi, '')
-  if (name.length > 40) name = name.slice(0,40)
+  let folder = topic.location || './'
+
+  name = name.replace(/[`~!@#$%^&*()_|+\-=?;:'",.<>\{\}\[\]\\\/]/gi, '').trim()
+  if (name.length > 20) name = name.slice(0,40).replace(/\s/g,'')
 
   let stream = fs.createWriteStream(folder + name + '.jpg')
 
@@ -192,19 +203,30 @@ function saveImage(artwork, folder){
     })
     .pipe(stream);
   }
+  else {
+    counter++
+    finishImage(topic)
+  }
   stream.on('finish', () => {
     counter++
-    finishImage(folder)
-    if (counter == length) console.log("... complete")
+    finishImage(topic)
+    if (counter == responses.length) {
+      status.downloading.succeed()
+      ora("Complete").succeed()
+    }
   })
 
 }
 
-function finishImage(folder) {
+function finishImage(topic) {
   itemsBeingProcessed -= 1;
-  process.stdout.write(`\rprocessed ${counter} of ${length} `);
+  if (!status.downloading)  {
+    status.topics.succeed()
+    status.downloading = ora("Downloading Images...").start()
+  }
+  status.downloading.text = `Processed ${counter} of ${responses.length} total | Topic: ${topic.name}` // process.stdout.write(`\rprocessed ${counter} of ${responses.length} total / working on ... ${topic.name} `)
   if (itemsBeingProcessed <= maxItems && fileQueue.length > 0) {
-    processImage(fileQueue.shift(), folder);
+    processImage(fileQueue.shift(), topic);
   }
 }
 
@@ -243,7 +265,7 @@ function HTMLtoLink(html){
 //     // $(imgs).each( (i, image) => {
 //     //   images.push($(image).attr('srcset'))
 //     // })
-    
+
 //     // console.log(images)
 //     // images.forEach( (image) => {
 //     //   let match = image.match(/[^>]*\bhttps[^"]*originals.*?.jpg/)

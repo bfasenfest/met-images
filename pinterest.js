@@ -10,14 +10,16 @@ var figlet      = require('figlet');
 var inquirer    = require('inquirer');
 const puppeteer = require('puppeteer');
 
+var debug = true
 
 var itemsBeingProcessed = 0;
 var fileQueue = [];
-var maxItems = 5
+var maxItems =  10
 var counter = 0
 var responses = {}
 const exportFile = true
 var length = 10
+var browsing = false
 
 var Progress = CLI.Progress, Spinner = CLI.Spinner;
 var status = {}
@@ -54,7 +56,14 @@ function getTopic(callback) {
 }
 
 function getLocation(answers){
-  responses.topics = answers.topics.split(',')
+  let arr = answers.topics.split(',')
+  responses.topics = []
+
+  arr.forEach( (topic, index) => {
+    topic = topic.trim()
+    if (topic.length != '') responses.topics.push(topic)
+  })
+
   let manyTopics = responses.topics.length !== 1
   let defaultLoc = !manyTopics ? './' + responses.topics[0].replace(/ /g,'') + '/' : './images/'
 
@@ -118,17 +127,32 @@ function initDownload(){
       fs.mkdirSync(topic.location);
     }
   })
+
   //var status = new Spinner('Getting Topics... ', ['⣾','⣽','⣻','⢿','⡿','⣟','⣯','⣷']);
   status.topics = ora({text: 'Scraping Topic Info', spinner: 'dots2'}).start()
-  topics.forEach( (topic) => {
-    browse(topic);
 
+  // topics.forEach( (topic) => {
+  //   browse(topic);
+  // })
+
+  var browseObj, broswer, page
+
+  asyncForEach(topics, async (topic, index) => {
+    if (!browseObj) {
+      browseObj = await startBrowser()
+      browser = browseObj.browser
+      page = browseObj.page
+    }
+    await browse(topic, page)
+    if (index == topics.length - 1) browser.close();
   })
+
+
 }
 
-async function browse(topic) {
-  height = 1000
-  width = 1600
+async function startBrowser() {
+  let height = 1000
+  let width = 1600
   const browser = await puppeteer.launch({headless: !responses.headless});
   const page = await browser.newPage();
   await page.setViewport({width, height})
@@ -149,6 +173,10 @@ async function browse(topic) {
     windowId
   })
 
+  return {browser, page}
+}
+
+async function browse(topic, page) {
   let topicUrl = encodeURIComponent(topic.name)
   await page.goto(topic.page) // ('https://www.pinterest.com/search/pins/?q=' + topicUrl);
   await page.waitFor(1000);
@@ -172,7 +200,6 @@ async function browse(topic) {
     artworks.push(artwork)
 }
   // status.topics.succeed()
-  browser.close();
   return artworks
 }
 
@@ -239,6 +266,11 @@ function HTMLtoLink(html){
   return parsed
 }
 
+async function asyncForEach(array, callback) {
+  for (let index = 0; index < array.length; index++) {
+    await callback(array[index], index, array)
+  }
+}
 
 //old request code
 // request(topic.page, function (error, response, html) {

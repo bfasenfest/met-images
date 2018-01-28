@@ -7,6 +7,7 @@ var clear       = require('clear');
 var CLI         = require('clui');
 var figlet      = require('figlet');
 var inquirer    = require('inquirer');
+const puppeteer = require('puppeteer');
 var Spinner     = CLI.Spinner;
 
 var itemsBeingProcessed = 0;
@@ -15,6 +16,8 @@ var maxItems = 40
 var counter = 0
 var responses = {}
 const exportFile = true
+var length = 10
+
 
 var t0 = now(), t1 = 0
 
@@ -55,7 +58,7 @@ function getLocation(answers){
       name: 'location',
       type: 'input',
       message: 'Enter location to save',
-      default: './' + responses.topics[0],
+      default: './' + responses.topics[0] + '/',
       validate: function( value ) {
         if (value.length) {
           return true;
@@ -69,7 +72,20 @@ function getLocation(answers){
       type: "confirm",
       name: "useFolders",
       default: true
-    }
+    },
+    {
+      name: 'maxResponses',
+      type: 'input',
+      message: 'How many images do you want to download?',
+      default: '10',
+      validate: function( value ) {
+        if (value.length) {
+          return true;
+        } else {
+          return 'Please enter a number';
+        }
+      }
+    },
   ];
 
   inquirer.prompt(questions).then(function(){
@@ -80,70 +96,78 @@ function getLocation(answers){
 }
 
 function initDownload(){
-  console.log('here')
   let topics = [];
   responses.topics.forEach( (name) => {
     let topic = {}
     topic.name = name.replace(/^\s+|\s+$/g,"")
     topic.page = "https://www.pinterest.com/search/pins/?q=" + topic.name
     topic.location = responses.location
-    if (responses.useFolders && responses.topics.length > 1) topic.location += '/' + topic.name
+    if (responses.useFolders && responses.topics.length > 1) topic.location += '/' + topic.name + '/'
     if (topic.name !== '') topics.push(topic)
+    if (!fs.existsSync(topic.location)){
+      fs.mkdirSync(topic.location);
+    }
   })
-  console.log(topics)
+  console.log("Getting Topics!")
   topics.forEach( (topic) => {
-
-  request(topic.page, function (error, response, html) {
-    if (!error && response.statusCode == 200) {
-      let matches = []
-      var $ = cheerio.load(html)
-      let json = JSON.parse($('#jsInit1').html())
-      let results = json.resourceDataCache[0].data.results
-      let images = []
-      results.forEach ( (result) => {
-        let image = result.images.orig.url
-        images.push(image)
-      })
-      console.log(images)
-      // fs.writeFileSync("pin-data2.json", JSON.stringify(json));
-
-      // let results = json.resourceDataCache.data.results
-      // console.log(results)
-
-      console.log('done')
-
-      // imgs = $('img')
-      // let images = []
-      // $(imgs).each( (i, image) => {
-      //   images.push($(image).attr('srcset'))
-      // })
-      
-      // console.log(images)
-      // images.forEach( (image) => {
-      //   let match = image.match(/[^>]*\bhttps[^"]*originals.*?.jpg/)
-      //   if (match) matches.push(match)
-      // })
-      // console.log(matches)
-      //console.log(matches)
-      // var $ = cheerio.load(html)
-      // var icon = $('.icon--download')
-      // var a = icon.parent()
-      // var href = a.attr('href')
-      // var parsed = href ? href.replace("{{selectedOrDefaultDownload('","").replace("')}}","") : ""
-    }
-    else {
-
-    }
-  })
+    browse(topic);
 
   })
-
 
 }
 
+async function browse(topic) {
+  height = 1000
+  width = 1600
+  const browser = await puppeteer.launch({headless: true});
+  const page = await browser.newPage();
+  await page.setViewport({width, height})
 
+  const {targetInfos: [{targetId}]} = await browser._connection.send(
+    'Target.getTargets'
+  );
+  
+  // Tab window. 
+  const {windowId} = await browser._connection.send(
+    'Browser.getWindowForTarget',
+    {targetId}
+  );
+
+
+  await browser._connection.send('Browser.setWindowBounds', {
+    bounds: {height, width},
+    windowId
+  })
+
+  let topicUrl = encodeURIComponent(topic.name)
+  await page.goto(topic.page) // ('https://www.pinterest.com/search/pins/?q=' + topicUrl);
+  await page.waitFor(1000);
+
+  let artworks = []
+  for (i = 1; i <= 10; i++){
+    let sel = 'body > div.App.AppBase.Module > div.appContent > div.mainContainer > div > div > div > div > div:nth-child(2) > div > div > div > div:nth-child(' + i + ') > div > div.GrowthUnauthPinImage > a > img'
+    let artwork = await page.evaluate((i, sel) => {
+      let data = {}
+      let item = document.querySelector(sel) //('div.GrowthUnauthPin_brioPin')
+      data.imgSrc = item.getAttribute('src').replace(/236x/, 'originals');
+      data.title = item.getAttribute('alt')
+      return data
+    }, i, sel)
+    if (i % 20 == 0) {
+      await page.hover(sel)
+      await page.waitFor(1000)
+    }
+    console.log(artwork)
+    processImage(artwork, topic.location)
+    artworks.push(artwork)
+}
+  browser.close();
+
+  return artworks
+}
 
 function processImage(artwork, folder = './') {
+  console.log(folder)
   if (itemsBeingProcessed > maxItems) {
     fileQueue.push(artwork);
     return;
@@ -151,22 +175,7 @@ function processImage(artwork, folder = './') {
   let page = artwork["Link Resource"]
 
   itemsBeingProcessed += 1;
-  if(!artwork.imgSrc){
-    request(page, function (error, response, html) {
-      if (!error && response.statusCode == 200) {
-        artwork.imgSrc = HTMLtoLink(html)
-        saveImage(artwork, folder)
-      }
-      else {
-        reject(Error("It broke"));
-        artwork.imgSrc = ''
-        saveImage(artwork, folder)
-      }
-    })
-  }
-  else{
-    saveImage(artwork, folder)
-  }
+  saveImage(artwork, folder)
 }
 
 function saveImage(artwork, folder){
@@ -175,7 +184,7 @@ function saveImage(artwork, folder){
   name = name.replace(/[`~!@#$%^&*()_|+\-=?;:'",.<>\{\}\[\]\\\/]/gi, '')
   if (name.length > 40) name = name.slice(0,40)
 
-  let stream = fs.createWriteStream(folder + name + "_" + id + '.png')
+  let stream = fs.createWriteStream(folder + name + '.jpg')
 
   if (link) {
     request(link).on('error', function(err) {
@@ -209,4 +218,46 @@ function HTMLtoLink(html){
 }
 
 
+//old request code
+// request(topic.page, function (error, response, html) {
+//   if (!error && response.statusCode == 200) {
+//     let matches = []
+//     var $ = cheerio.load(html)
+//     let json = JSON.parse($('#jsInit1').html())
+//     let results = json.resourceDataCache[0].data.results
+//     let images = []
+//     results.forEach ( (result) => {
+//       let image = result.images.orig.url
+//       images.push(image)
+//     })
+//     console.log(images)
+//     // fs.writeFileSync("pin-data2.json", JSON.stringify(json));
 
+//     // let results = json.resourceDataCache.data.results
+//     // console.log(results)
+
+//     console.log('done')
+
+//     // imgs = $('img')
+//     // let images = []
+//     // $(imgs).each( (i, image) => {
+//     //   images.push($(image).attr('srcset'))
+//     // })
+    
+//     // console.log(images)
+//     // images.forEach( (image) => {
+//     //   let match = image.match(/[^>]*\bhttps[^"]*originals.*?.jpg/)
+//     //   if (match) matches.push(match)
+//     // })
+//     // console.log(matches)
+//     //console.log(matches)
+//     // var $ = cheerio.load(html)
+//     // var icon = $('.icon--download')
+//     // var a = icon.parent()
+//     // var href = a.attr('href')
+//     // var parsed = href ? href.replace("{{selectedOrDefaultDownload('","").replace("')}}","") : ""
+//   }
+//   else {
+
+//   }
+// })

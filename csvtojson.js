@@ -8,12 +8,13 @@ const csvFilePath='MetObjects.csv'
 var metObject = []
 let counter = 1
 let processed = 0
-let max = 100
+let max = 240000
 
 csv()
 .fromFile(csvFilePath)
 .on('json',(jsonObj)=>{
     // console.log(jsonObj)
+    fs.writeFileSync("metTest.json", JSON.stringify(jsonObj));
     if(jsonObj['Is Public Domain'] == "True") {
         // Delete empty and non-meaningful keys
         Object.keys(jsonObj).forEach((key) => (jsonObj[key] == "") && delete jsonObj[key]);
@@ -28,13 +29,12 @@ csv()
 
     if (processed == max) {
         fs.writeFileSync("metObject.json", JSON.stringify(metObject));
-        break;
     }
 
 })
 .on('done',(error)=>{
     console.log('end')
-    if (max < 0) fs.writeFileSync("metObject.json", JSON.stringify(metObject));
+    if (max < 0) fs.writeFileSync("metObject-total.json", JSON.stringify(metObject));
     console.log('wrote to file')
 })
 

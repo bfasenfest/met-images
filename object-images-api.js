@@ -15,10 +15,10 @@ var counter = 0
 var max = json.length || 2000
 var t0 = now(), t1 = 0
 
-const outDir = './quilts/'
+const outDir = './rembrandt/'
 const saveJson = false
 const saveImages = true
-const term = 'quilt'
+const term = 'Artist: Rembrandt'
 const limit = 1000
 
 // objects = json.filter(artwork => {
@@ -49,7 +49,7 @@ axios.get("https://collectionapi.metmuseum.org/public/collection/v1/search?hasIm
       fs.mkdirSync(outDir);
     }
     objects.forEach( (artwork, index, array) => {
-      if(index < limit) processImage(artwork, outDir)
+      if(index < limit) _.delay(processImage, index*50, artwork, outDir)
 
     })
   }
@@ -94,7 +94,7 @@ function saveImage(artwork, folder){
 
 function processImage(artworkID, folder = './') {
   if (itemsBeingProcessed > maxItems) {
-    fileQueue.push(artwork);
+    fileQueue.push(artworkID);
     return;
   }
   

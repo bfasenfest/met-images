@@ -15,7 +15,7 @@
     "fs": "^0.0.1-security",
     "fs-extra": "^5.0.0",
     "inquirer": "^5.0.1",
-    "jquery": "^3.3.1",
+    "jquery": "^3.5.0",
     "json-2-csv": "^2.1.2",
     "lodash": "^4.17.21",
     "minimist": "^1.2.0",

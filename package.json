@@ -24,7 +24,7 @@
     "puppeteer": "^1.0.0",
     "request": "^2.83.0",
     "scrape-it": "^4.1.2",
-    "underscore": "^1.8.3"
+    "underscore": "^1.12.1"
   },
   "devDependencies": {},
   "scripts": {
